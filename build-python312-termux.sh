@@ -100,7 +100,17 @@ echo "==> [5/6] make -j${JOBS}（首次约 15-40 分钟，手机请确保插电+
 sed -i 's/^LN[[:space:]]*=.*/LN = ln -s/' Makefile 2>/dev/null || true
 rm -f "libpython${PY_SHORT}.so"
 ln -s "libpython${PY_SHORT}.so.1.0" "libpython${PY_SHORT}.so" 2>/dev/null || true
-make LN="ln -s" -j"${JOBS}" 2>&1 | tee -a "$LOG"
+# [FIX 2] Android 上扩展模块(lib-dynload/*.so)不会自动 DT_NEEDED libpython，
+# 导致 checksharedmods 阶段 import math 报 "cannot locate symbol PyExc_ValueError"。
+# 若 make 失败，用 patchelf 给所有扩展模块补上 libpython 依赖后重试。
+if ! make LN="ln -s" -j"${JOBS}" 2>&1 | tee -a "$LOG"; then
+    echo "==> make 首次失败，尝试为扩展模块补充 libpython 依赖（patchelf）"
+    find . -type f -path "*/lib-dynload/*.so" | while read -r _so; do
+        patchelf --add-needed "libpython${PY_SHORT}.so" "$_so" 2>/dev/null || true
+    done
+    make LN="ln -s" -j"${JOBS}" 2>&1 | tee -a "$LOG" \
+        || { echo "!! make 仍失败，查看 ${LOG} 末尾并反馈"; exit 1; }
+fi
 make install 2>&1 | tee -a "$LOG"
 
 # ---------- 6. 校验 ----------
