@@ -16,9 +16,17 @@ if grep -q '^void ScrollLog' application/Core/VectorConsole.cpp 2>/dev/null; the
   sed -i '/^void ScrollLog/,/^}/ { /RedrawLogPane();/d; }' application/Core/VectorConsole.cpp
 fi
 
-echo "==> [3/3] 验证"
+echo "==> [3/4] 修复 PythonRuntime.cpp 未加平台保护的 #include <windows.h>"
+# 其它文件都用 #ifdef _WIN32 包了 windows.h，唯独此处漏包，Android 下无此头文件。
+if grep -q '^#include <windows.h>' application/Python/PythonRuntime.cpp 2>/dev/null; then
+  sed -i 's|^#include <windows.h>|#ifdef _WIN32\n#include <windows.h>\n#endif|' application/Python/PythonRuntime.cpp
+fi
+
+echo "==> [4/4] 验证"
 echo "--- 残留 SLikeNet/ include（应为空）:"
 grep -rn 'SLikeNet/' application --include='*.h' --include='*.cpp' 2>/dev/null | head || true
 echo "--- ScrollLog 函数体（应无 RedrawLogPane 调用）:"
 sed -n '/^void ScrollLog/,/^}/p' application/Core/VectorConsole.cpp
+echo "--- PythonRuntime.cpp 头部（windows.h 应被 #ifdef _WIN32 包裹）:"
+sed -n '1,8p' application/Python/PythonRuntime.cpp
 echo "==> 完成。现在执行: cmake --build build -j\$(nproc)"
