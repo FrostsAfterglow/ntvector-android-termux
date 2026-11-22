@@ -100,13 +100,20 @@ echo "==> [5/6] make -j${JOBS}（首次约 15-40 分钟，手机请确保插电+
 sed -i 's/^LN[[:space:]]*=.*/LN = ln -s/' Makefile 2>/dev/null || true
 rm -f "libpython${PY_SHORT}.so"
 ln -s "libpython${PY_SHORT}.so.1.0" "libpython${PY_SHORT}.so" 2>/dev/null || true
-# [FIX 2] Android 上扩展模块(lib-dynload/*.so)不会自动 DT_NEEDED libpython，
+# [FIX 2] Android 上扩展模块不会自动 DT_NEEDED libpython，
 # 导致 checksharedmods 阶段 import math 报 "cannot locate symbol PyExc_ValueError"。
-# 若 make 失败，用 patchelf 给所有扩展模块补上 libpython 依赖后重试。
-if ! make LN="ln -s" -j"${JOBS}" 2>&1 | tee -a "$LOG"; then
+# 两个关键点（真机踩坑修正）：
+#   1) 编译期扩展模块在 build/lib*/ 下，不在 lib-dynload/，必须全树 find *.so；
+#   2) 要加 SONAME "libpython3.12.so.1.0"（不是软链接名 libpython3.12.so），
+#      linker 才能复用 ./python 已加载的同 SONAME 库，符号才可见。
+make_ok=1
+make LN="ln -s" -j"${JOBS}" 2>&1 | tee -a "$LOG" || make_ok=0
+if [ "$make_ok" -ne 1 ]; then
     echo "==> make 首次失败，尝试为扩展模块补充 libpython 依赖（patchelf）"
-    find . -type f -path "*/lib-dynload/*.so" | while read -r _so; do
-        patchelf --add-needed "libpython${PY_SHORT}.so" "$_so" 2>/dev/null || true
+    export LD_LIBRARY_PATH="$PWD:${LD_LIBRARY_PATH}"
+    find . -type f -name "*.so" ! -name "libpython${PY_SHORT}.so*" | while read -r _so; do
+        patchelf --print-needed "$_so" 2>/dev/null | grep -q "libpython${PY_SHORT}" && continue
+        patchelf --add-needed "libpython${PY_SHORT}.so.1.0" "$_so" 2>/dev/null && echo "patched: $_so"
     done
     make LN="ln -s" -j"${JOBS}" 2>&1 | tee -a "$LOG" \
         || { echo "!! make 仍失败，查看 ${LOG} 末尾并反馈"; exit 1; }
