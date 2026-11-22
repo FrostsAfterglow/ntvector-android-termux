@@ -92,7 +92,15 @@ echo "==> [4/6] configure（日志: ${LOG}）"
 
 # ---------- 5. 编译安装 ----------
 echo "==> [5/6] make -j${JOBS}（首次约 15-40 分钟，手机请确保插电+散热）"
-make -j"${JOBS}" 2>&1 | tee -a "$LOG"
+# [FIX] Android/Termux 的文件系统通常不支持硬链接，CPython 构建 libpython3.12.so
+# 时会用 ln 创建硬链接并报 "Permission denied"。改为软链接可绕过（已在真机验证）：
+#   1) 把 Makefile 里的 LN 默认命令改为 ln -s
+#   2) 预创建 libpython3.12.so 软链接，避免链接规则触发硬链接
+#   3) make 时再用 LN="ln -s" 覆盖一次，双保险
+sed -i 's/^LN[[:space:]]*=.*/LN = ln -s/' Makefile 2>/dev/null || true
+rm -f "libpython${PY_SHORT}.so"
+ln -s "libpython${PY_SHORT}.so.1.0" "libpython${PY_SHORT}.so" 2>/dev/null || true
+make LN="ln -s" -j"${JOBS}" 2>&1 | tee -a "$LOG"
 make install 2>&1 | tee -a "$LOG"
 
 # ---------- 6. 校验 ----------
