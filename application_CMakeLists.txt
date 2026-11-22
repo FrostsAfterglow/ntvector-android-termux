@@ -124,10 +124,24 @@ if(WIN32)
     endif()
 endif()
 
+# [FIX 3] 兼容源码中 <SLikeNet/xxx.h> 形式的 include：
+# 上游 Py2→Py3 迁移遗留 bug，源码写 #include <SLikeNet/BitStream.h>，
+# 但头文件实际在 SLikeNet-master/Source/ 下（无 SLikeNet/ 这层）。
+# 在 build 目录建一个 SLikeNet -> Source 的符号链接，让该 include 自动解析，
+# 无需改动任何源码文件。Android/Termux 文件系统支持符号链接（已验证）。
+set(_snet_alias "${CMAKE_CURRENT_BINARY_DIR}/snet_alias")
+file(MAKE_DIRECTORY "${_snet_alias}")
+if(NOT EXISTS "${_snet_alias}/SLikeNet")
+    file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}/include/SLikeNet-master/Source"
+         "${_snet_alias}/SLikeNet" SYMBOLIC RESULT _snet_link_result)
+    message(STATUS "SLikeNet include alias: ${_snet_link_result}")
+endif()
+
 # Include 路径 (仅项目自身和无 CMake target 的第三方库)
 # OpenSSL / jsoncpp / Python / libwebsockets / libdatachannel
 # 的头文件由各自的 CMake target 通过 INTERFACE_INCLUDE_DIRECTORIES 自动提供
 target_include_directories(Program PRIVATE
+    ${_snet_alias}
     ${CMAKE_CURRENT_SOURCE_DIR}/Core
     ${CMAKE_CURRENT_SOURCE_DIR}/Crypto
     ${CMAKE_CURRENT_SOURCE_DIR}/Network
